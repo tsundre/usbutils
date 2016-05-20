@@ -112,6 +112,16 @@
 
 #define BILLBOARD_MAX_NUM_ALT_MODE	(0x34)
 
+static const uint8_t webusb_platform_cap_uuid[] = {
+    0x38, 0xb6, 0x08, 0x34, 0xa9, 0x09, 0xa0, 0x47,
+    0x8b, 0xfd, 0xa0, 0x76, 0x88, 0x15, 0xb6, 0x65
+};
+
+static const uint8_t msos20_platform_cap_uuid[] = {
+    0xdf, 0x60, 0xdd, 0xd8, 0x89, 0x45, 0xc7, 0x4c,
+    0x9c, 0xd2, 0x65, 0x9d, 0x9e, 0x64, 0x8a, 0x9f
+};
+
 static const char procbususb[] = "/proc/bus/usb";
 static unsigned int verblevel = VERBLEVEL_DEFAULT;
 static int do_report_desc = 1;
@@ -3799,26 +3809,78 @@ static void dump_container_id_device_capability_desc(unsigned char *buf)
 			get_guid(&buf[4]));
 }
 
-static void dump_platform_device_capability_desc(unsigned char *buf)
+static void dump_webusb_capability_desc(const unsigned char *buf)
+{
+    printf("      bcdVersion           %2x.%02x\n"
+           "      bVendorCode           0x%02x\n"
+           "      iLandingPage         %5u\n",
+            buf[1], buf[0], buf[2], buf[3]);
+}
+
+static void dump_msos20_descriptor_set_information(const unsigned char *buf, int len)
+{
+    int offset;
+    int total_length;
+    const unsigned char * descr;
+
+    if (len % 8 != 0) {
+        fprintf(stderr, "  Unexpected MS OS 2.0 descriptor set information length.+n");
+        return;
+    }
+
+    for (offset = 0; offset < len; offset += 8) {
+        descr = buf + offset;
+        total_length = (descr[5] << 8) | descr[4];
+        printf("      dwWinVersion    0x%02x%02x%02x%02x\n"
+               "      wTotalLength         %5u\n"
+               "      bMS_VendorCode        0x%02x\n"
+               "      bAltEnumCode         %5u\n",
+                descr[3], descr[2], descr[1], descr[0],
+                total_length,
+                descr[6],
+                descr[7]);
+    }
+}
+
+unsigned char * get_platform_device_cap_name(const unsigned char *uuid)
+{
+    if (memcmp(uuid, webusb_platform_cap_uuid, 16) == 0) {
+        return "WebUSB Platform Capability Descriptor";
+    }
+    else if (memcmp(uuid, msos20_platform_cap_uuid, 16) == 0) {
+        return "Microsoft OS 2.0 Platform Capability Descriptor";
+    }
+    return "Platform Device Capability";
+}
+
+static void dump_platform_device_capability_desc(const unsigned char *buf)
 {
 	unsigned char desc_len = buf[0];
-	unsigned char cap_data_len = desc_len - 20;
 	unsigned char i;
 	if (desc_len < 20) {
 		fprintf(stderr, "  Bad Platform Device Capability descriptor.\n");
 		return;
 	}
-	printf("  Platform Device Capability:\n"
+	printf("  %s:\n"
 			"    bLength             %5u\n"
 			"    bDescriptorType     %5u\n"
 			"    bDevCapabilityType  %5u\n"
 			"    bReserved           %5u\n",
+            get_platform_device_cap_name(&buf[4]),
 			buf[0], buf[1], buf[2], buf[3]);
 	printf("    PlatformCapabilityUUID    %s\n",
 			get_guid(&buf[4]));
-	for (i = 0; i < cap_data_len; i++) {
-		printf("    CapabilityData[%u]    0x%02x\n", i, buf[20 + i]);
-	}
+    if (memcmp(&buf[4], webusb_platform_cap_uuid, 16) == 0) {
+        dump_webusb_capability_desc(&buf[20]);
+    }
+    else if (memcmp(&buf[4], msos20_platform_cap_uuid, 16) == 0) {
+        dump_msos20_descriptor_set_information(&buf[20], buf[0] - 20);
+    }
+    else {
+	    for (i = 0; i < desc_len - 20; i++) {
+		    printf("    CapabilityData[%2u]    0x%02x\n", i, buf[20 + i]);
+	    }
+    }
 }
 
 static void dump_billboard_device_capability_desc(libusb_device_handle *dev, unsigned char *buf)
